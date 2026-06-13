@@ -80,14 +80,16 @@ Recent News Headlines (Today's top stories):
         
     prompt += """
 Your Task:
-1. Perform a thorough financial risk assessment of these headlines and price movements.
-2. Determine a dynamic Risk Rating on a strict scale of 1 to 10 (1 = lowest risk, 10 = highest risk).
-3. Decide on a trading action: BUY, SELL, or HOLD.
-4. Recommend an allocation percentage (1 to 100).
+1. Perform a thorough financial risk assessment of these headlines and daily price movements. Note that this bot runs on a daily schedule (once every 24 hours).
+2. The portfolio strategy is a medium-term swing-trading and DCA strategy. The user contributes €100 (simulated as $108 USD) monthly, targeting a stable 3% monthly return.
+3. To achieve this, you must prioritize stable, high-conviction medium-term trends and minimize active trading turnover. Avoid high-frequency trading or reactive day-trading to prevent commission fee drag.
+4. Determine a dynamic Risk Rating on a strict scale of 1 to 10 (1 = lowest risk, 10 = highest risk).
+5. Decide on a trading action: BUY, SELL, or HOLD.
+6. Recommend an allocation percentage (1 to 100).
    - If action is BUY, this is the percentage of available cash to use.
    - If action is SELL, this is the percentage of your holdings to liquidate.
    - If action is HOLD, allocation percentage must be 0.
-5. Provide a detailed, professional, and quantitative executive summary explaining your reasoning.
+7. Provide a detailed, professional, and quantitative executive summary explaining your reasoning.
 
 You must respond with a JSON object in this exact format:
 {
@@ -99,7 +101,7 @@ You must respond with a JSON object in this exact format:
 Do not include any extra text, markdown formatting, or HTML. Just return the raw JSON object.
 """
     
-    model = genai.GenerativeModel("gemini-3.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
     
     text = response.text.strip()
@@ -306,8 +308,47 @@ def run_cloud_simulation_cycle(ticker, bucket_name, api_key):
     # 3. Ask Gemini to act as strict Risk Analyst
     analyst_decision = run_gemini_analyst(api_key, ticker, price_data, news_data.get('news', []))
     
-    # 4. Load portfolio state from Cloud Storage
     portfolio = load_portfolio_gcs(bucket_name)
+    
+    # Auto-deposit: Inject €100 (simulated as $108 USD) at the start of every month
+    current_date = datetime.datetime.now().strftime("%Y-%m")
+    last_deposit = portfolio.get("last_deposit_date", "")
+    if last_deposit != current_date:
+        deposit_amount = 108.00
+        old_cash = portfolio.get("cash", 0.0)
+        portfolio["cash"] = old_cash + deposit_amount
+        portfolio["last_deposit_date"] = current_date
+        
+        deposit_entry = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "ticker": "USD",
+            "action": "DEPOSIT",
+            "price": 1.0,
+            "allocation_percentage": 0.0,
+            "shares_traded": deposit_amount,
+            "value": deposit_amount,
+            "reasoning": f"Automated monthly capital injection of €100 (simulated as ${deposit_amount:.2f} USD)."
+        }
+        if "history" not in portfolio:
+            portfolio["history"] = []
+        portfolio["history"].append(deposit_entry)
+        
+        print(f"Injecting monthly deposit of ${deposit_amount:.2f}. New cash balance: ${portfolio['cash']:.2f}")
+        save_portfolio_gcs(bucket_name, portfolio)
+        
+        nav, _, _, _ = get_portfolio_valuation_gcs(portfolio)
+        log_to_csv_gcs(
+            bucket_name=bucket_name,
+            ticker="USD",
+            action="DEPOSIT",
+            price=1.0,
+            allocation_pct=0.0,
+            shares_traded=deposit_amount,
+            trade_value=deposit_amount,
+            cash=portfolio["cash"],
+            portfolio_value=nav,
+            reasoning=deposit_entry["reasoning"]
+        )
     
     action = analyst_decision.get('action', 'HOLD').upper()
     alloc = analyst_decision.get('allocation_percentage', 0)
