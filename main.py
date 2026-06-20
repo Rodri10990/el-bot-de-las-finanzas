@@ -1,5 +1,6 @@
 import os
 import datetime
+import time
 import functions_framework
 from flask import jsonify
 from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST
@@ -47,6 +48,11 @@ def handle_trading_cycle(request):
             results[ticker] = {"success": False, "error": str(e)}
             errors.append(f"{ticker}: Exception {str(e)}")
             print(f"Critical exception processing {ticker}: {str(e)}")
+            
+        # Add rate-limiting delay between requests to avoid exceeding Gemini API 5 RPM free quota
+        if ticker != WATCHLIST[-1]:
+            print("Sleeping for 15 seconds to respect Gemini API rate limits...")
+            time.sleep(15)
             
     print(f"Completed hourly trading cycle. Successes: {len(results) - len(errors)}, Errors: {len(errors)}")
     
