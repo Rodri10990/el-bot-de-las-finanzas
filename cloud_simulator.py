@@ -86,7 +86,7 @@ Your Task:
 4. Determine a dynamic Risk Rating on a strict scale of 1 to 10 (1 = lowest risk, 10 = highest risk).
 5. Decide on a trading action: BUY, SELL, or HOLD.
 6. Recommend an allocation percentage (1 to 100).
-   - If action is BUY, this is the percentage of available cash to use.
+   - If action is BUY, this is the percentage of the maximum allowed trade size (which is 15% of total portfolio NAV) to use.
    - If action is SELL, this is the percentage of your holdings to liquidate.
    - If action is HOLD, allocation percentage must be 0.
 7. Provide a detailed, professional, and quantitative executive summary explaining your reasoning.
@@ -223,13 +223,20 @@ def execute_trade_gcs(bucket_name, portfolio, ticker, action, allocation_pct, pr
     nav, total_holdings_val, holding_values, holding_prices = get_portfolio_valuation_gcs(portfolio, ticker, price)
     
     if action == "BUY" and allocation_pct > 0:
-        # Safety Overlay 1: 15% Max available cash sizing
-        if allocation_pct > 15:
-            safety_log.append(f"Capped trade cash allocation from {allocation_pct}% to 15.0% due to trade size limits.")
-            allocation_pct = 15.0
-            
-        cash_to_use = cash * (allocation_pct / 100.0)
+        # Safety Overlay 1: Max trade size is 15% of portfolio NAV
+        max_trade_cash = nav * 0.15
         
+        # Calculate cash to use based on allocation percentage of the max allowed trade cash
+        cash_to_use = max_trade_cash * (allocation_pct / 100.0)
+        
+        # Ensure we don't exceed actual available cash
+        if cash_to_use > cash:
+            original_cash_to_use = cash_to_use
+            cash_to_use = cash
+            safety_log.append(f"BUY trade size capped at available cash of ${cash:,.2f} (originally ${original_cash_to_use:,.2f}).")
+        else:
+            safety_log.append(f"BUY trade size set to ${cash_to_use:,.2f} (which represents {allocation_pct}% of the 15% NAV limit of ${max_trade_cash:,.2f}).")
+            
         # Safety Overlay 2: 30% NAV maximum exposure limit
         max_allowed_val = nav * 0.30
         current_val = holding_values.get(ticker, 0.0)
@@ -244,7 +251,8 @@ def execute_trade_gcs(bucket_name, portfolio, ticker, action, allocation_pct, pr
             else:
                 original_cash = cash_to_use
                 cash_to_use = allowed_additional_cash
-                allocation_pct = (cash_to_use / cash) * 100.0 if cash > 0 else 0.0
+                # Recalculate allocation_pct relative to max_trade_cash for logging
+                allocation_pct = (cash_to_use / max_trade_cash) * 100.0 if max_trade_cash > 0 else 0.0
                 safety_log.append(f"BUY trade value capped at ${cash_to_use:,.2f} (originally ${original_cash:,.2f}) to respect the 30% concentration limit.")
                 
         if cash_to_use >= 0.01 and action == "BUY":
