@@ -51,8 +51,8 @@ def handle_trading_cycle(request):
             
         # Add rate-limiting delay between requests to avoid exceeding Gemini API 5 RPM free quota
         if ticker != WATCHLIST[-1]:
-            print("Sleeping for 15 seconds to respect Gemini API rate limits...")
-            time.sleep(15)
+            print("Sleeping for 30 seconds to respect Gemini API rate limits...")
+            time.sleep(30)
             
     print(f"Completed hourly trading cycle. Successes: {len(results) - len(errors)}, Errors: {len(errors)}")
     
