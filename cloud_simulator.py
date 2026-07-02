@@ -124,28 +124,28 @@ Do not include any extra text, markdown formatting, or HTML. Just return the raw
 
 def load_portfolio_gcs(bucket_name):
     """Load portfolio state from Google Cloud Storage."""
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(PORTFOLIO_BLOB)
-    
-    if not blob.exists():
-        portfolio = {
-            "cash": 10000.0,
-            "holdings": {ticker: 0.0 for ticker in WATCHLIST},
-            "history": []
-        }
-        save_portfolio_gcs(bucket_name, portfolio)
-        return portfolio
+    with storage.Client() as client:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(PORTFOLIO_BLOB)
         
-    data = blob.download_as_text()
-    return json.loads(data)
+        if not blob.exists():
+            portfolio = {
+                "cash": 10000.0,
+                "holdings": {ticker: 0.0 for ticker in WATCHLIST},
+                "history": []
+            }
+            save_portfolio_gcs(bucket_name, portfolio)
+            return portfolio
+            
+        data = blob.download_as_text()
+        return json.loads(data)
 
 def save_portfolio_gcs(bucket_name, portfolio):
     """Save portfolio state to Google Cloud Storage."""
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(PORTFOLIO_BLOB)
-    blob.upload_from_string(json.dumps(portfolio, indent=2))
+    with storage.Client() as client:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(PORTFOLIO_BLOB)
+        blob.upload_from_string(json.dumps(portfolio, indent=2))
 
 def get_portfolio_valuation_gcs(portfolio, active_ticker=None, active_price=0.0):
     """Calculate the real-time valuation of the portfolio in the cloud."""
@@ -170,35 +170,35 @@ def get_portfolio_valuation_gcs(portfolio, active_ticker=None, active_price=0.0)
 
 def log_to_csv_gcs(bucket_name, ticker, action, price, allocation_pct, shares_traded, trade_value, cash, portfolio_value, reasoning):
     """Log the simulation run and portfolio value over time to history.csv in GCS."""
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(HISTORY_BLOB)
-    
-    clean_reasoning = reasoning.replace('"', '""').replace('\n', ' ')
-    
-    row = [
-        datetime.datetime.now().isoformat(),
-        ticker,
-        action,
-        f"{price:.6f}" if price else "0.0",
-        f"{allocation_pct:.2f}",
-        f"{shares_traded:.6f}",
-        f"{trade_value:.2f}",
-        f"{cash:.2f}",
-        f"{portfolio_value:.2f}",
-        f'"{clean_reasoning}"'
-    ]
-    
-    csv_line = ",".join(row) + "\n"
-    
-    if blob.exists():
-        current_csv = blob.download_as_text()
-        new_csv = current_csv + csv_line
-    else:
-        header = "timestamp,ticker,action,price,allocation_percentage,shares_traded,value,available_cash,total_portfolio_value,reasoning\n"
-        new_csv = header + csv_line
+    with storage.Client() as client:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(HISTORY_BLOB)
         
-    blob.upload_from_string(new_csv)
+        clean_reasoning = reasoning.replace('"', '""').replace('\n', ' ')
+        
+        row = [
+            datetime.datetime.now().isoformat(),
+            ticker,
+            action,
+            f"{price:.6f}" if price else "0.0",
+            f"{allocation_pct:.2f}",
+            f"{shares_traded:.6f}",
+            f"{trade_value:.2f}",
+            f"{cash:.2f}",
+            f"{portfolio_value:.2f}",
+            f'"{clean_reasoning}"'
+        ]
+        
+        csv_line = ",".join(row) + "\n"
+        
+        if blob.exists():
+            current_csv = blob.download_as_text()
+            new_csv = current_csv + csv_line
+        else:
+            header = "timestamp,ticker,action,price,allocation_percentage,shares_traded,value,available_cash,total_portfolio_value,reasoning\n"
+            new_csv = header + csv_line
+            
+        blob.upload_from_string(new_csv)
 
 def execute_trade_gcs(bucket_name, portfolio, ticker, action, allocation_pct, price, reasoning):
     """
