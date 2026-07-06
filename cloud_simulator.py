@@ -121,6 +121,32 @@ Do not include any extra text, markdown formatting, or HTML. Just return the raw
             "allocation_percentage": 0,
             "reasoning": f"Failed to parse Gemini output: {text}. Error: {str(parse_error)}"
         }
+def send_telegram_alert(message):
+    """Send a markdown message to the Telegram bot."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("Telegram credentials not configured. Skipping alert.")
+        return False
+        
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown"
+    }
+    try:
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            url, 
+            data=data, 
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return response.status == 200
+    except Exception as e:
+        print(f"Failed to send Telegram alert: {e}")
+        return False
 
 def load_portfolio_gcs(bucket_name):
     """Load portfolio state from Google Cloud Storage."""
@@ -393,7 +419,18 @@ def run_cloud_simulation_cycle(ticker, bucket_name, api_key):
         portfolio_value=final_nav,
         reasoning=reasoning
     )
-    
+        # Mark ticker as successfully processed today in the portfolio state
+    try:
+        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        p_state = load_portfolio_gcs(bucket_name)
+        if "processed_today" not in p_state or p_state["processed_today"].get("date") != current_date:
+            p_state["processed_today"] = {"date": current_date, "tickers": []}
+        if ticker not in p_state["processed_today"]["tickers"]:
+            p_state["processed_today"]["tickers"].append(ticker)
+        save_portfolio_gcs(bucket_name, p_state)
+    except Exception as ex:
+        print(f"Failed to mark {ticker} as processed today: {ex}")
+        
     return {
         'success': True,
         'ticker': ticker,
