@@ -121,7 +121,7 @@ def handle_trading_cycle(request):
         except Exception as alert_err:
             print(f"Failed to compile and send Telegram alert: {alert_err}")
             
-    status_code = 200 if not errors else 207  # 207 Multi-Status if there are minor errors
+    status_code = 200 if not errors else 500  # Return 500 on execution errors to trigger Cloud Scheduler retries
     return jsonify({
         "success": len(errors) == 0,
         "timestamp": datetime.datetime.now().isoformat(),
