@@ -44,6 +44,33 @@ def get_current_price(ticker):
         }
     except Exception as e:
         return {'success': False, 'error': str(e)}
+def get_historical_data(ticker, period="1mo", interval="1d"):
+    """Fetch historical close prices and volumes from Yahoo Finance."""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range={period}&interval={interval}"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'})
+    try:
+        with urllib.request.urlopen(req) as response:
+            chart_data = json.loads(response.read().decode())
+            
+        result = chart_data['chart']['result'][0]
+        indicators = result['indicators']['quote'][0]
+        timestamps = result.get('timestamp', [])
+        
+        close_prices = indicators.get('close', [])
+        volumes = indicators.get('volume', [])
+        
+        history = []
+        for i in range(len(timestamps)):
+            if close_prices[i] is not None:
+                dt = datetime.datetime.fromtimestamp(timestamps[i]).strftime('%Y-%m-%d')
+                history.append({
+                    "date": dt,
+                    "close": close_prices[i],
+                    "volume": volumes[i] if volumes[i] is not None else 0
+                })
+        return {"success": True, "history": history}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 def get_news_headlines(ticker):
     """Fetch recent news headlines from Yahoo Finance Search API."""
