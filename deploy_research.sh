@@ -28,7 +28,7 @@ gcloud functions deploy "$FUNCTION_NAME" \
   --runtime=python310 \
   --region="$REGION" \
   --trigger-http \
-  --entry-point=handle_research_cycle \
+  --entry-point=research_analyst.handle_research_cycle \
   --memory=256Mi \
   --cpu=1 \
   --timeout=180 \
