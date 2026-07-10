@@ -4,6 +4,7 @@ import time
 import functions_framework
 from flask import jsonify
 from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs
+from research_analyst import handle_research_cycle
 
 @functions_framework.http
 def handle_trading_cycle(request):
