@@ -161,7 +161,7 @@ Do not include any extra text, markdown formatting, or HTML. Just return the raw
             "reasoning": f"Failed to parse Gemini output: {text}. Error: {str(parse_error)}"
         }
 def send_telegram_alert(message):
-    """Send a markdown message to the Telegram bot."""
+    """Send a markdown message to the Telegram bot with plain text fallback on formatting error."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
@@ -183,6 +183,25 @@ def send_telegram_alert(message):
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             return response.status == 200
+    except urllib.error.HTTPError as http_err:
+        if http_err.code == 400:
+            print(f"Telegram Markdown parse failed. Retrying as plain text. Error: {http_err.read().decode('utf-8')}")
+            payload.pop("parse_mode", None)
+            try:
+                data = json.dumps(payload).encode('utf-8')
+                req = urllib.request.Request(
+                    url, 
+                    data=data, 
+                    headers={'Content-Type': 'application/json'}
+                )
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.status == 200
+            except Exception as fallback_err:
+                print(f"Fallback Telegram alert failed: {fallback_err}")
+                return False
+        else:
+            print(f"Failed to send Telegram alert (HTTP {http_err.code}): {http_err.read().decode('utf-8')}")
+            return False
     except Exception as e:
         print(f"Failed to send Telegram alert: {e}")
         return False
