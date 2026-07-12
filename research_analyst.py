@@ -5,7 +5,7 @@ import json
 import functions_framework
 from flask import jsonify
 import google.generativeai as genai
-from cloud_simulator import load_portfolio_gcs, send_telegram_alert, get_historical_data, get_news_headlines
+from cloud_simulator import load_portfolio_gcs, send_telegram_alert, get_historical_data, get_news_headlines, get_usd_to_eur_rate
 
 RESEARCH_WATCHLIST = ["AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "AVGO", "NFLX"]
 
@@ -38,16 +38,29 @@ def run_gemini_advisor(api_key, portfolio, watchlist_data):
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    usd_to_eur = get_usd_to_eur_rate()
+    cash_eur = portfolio.get('cash', 0.0) * usd_to_eur
+    
+    watchlist_data_eur = {}
+    for ticker, info in watchlist_data.items():
+        watchlist_data_eur[ticker] = {
+            "price_eur": info["price"] * usd_to_eur,
+            "return_7d_pct": info["return_7d_pct"],
+            "return_14d_pct": info["return_14d_pct"],
+            "headlines": info["headlines"]
+        }
     
     prompt = f"""
 You are a Senior Portfolio Manager and Equity Research Analyst. Your job is to analyze a list of stock market opportunities, cross-reference them with the user's current paper-trading portfolio holdings, and write a high-impact, easy-to-read weekly advisory digest for the user on Telegram.
 
-### CURRENT PORTFOLIO STATE:
-Cash Balance: ${portfolio.get('cash', 0.0):.2f}
+NOTE: All asset values and stock prices have been pre-converted to Euros (€) and are in Euro currency. You must write the entire report and perform all calculations/analyses using Euro (€) currency. Do not use US Dollar ($) symbols.
+
+### CURRENT PORTFOLIO STATE (EUROS):
+Cash Balance: €{cash_eur:.2f}
 Active Holdings (units held): {json.dumps(portfolio.get('holdings', {}), indent=2)}
 
-### MARKET DISCOVERY WATCHLIST DATA:
-{json.dumps(watchlist_data, indent=2)}
+### MARKET DISCOVERY WATCHLIST DATA (EUROS):
+{json.dumps(watchlist_data_eur, indent=2)}
 
 ### INSTRUCTIONS FOR THE REPORT:
 Write a clean, engaging Telegram report in Markdown using standard formatting (*bold* for bold, _italic_ for italic, emojis, bullet points). Do NOT use nested HTML or unsupported markdown headers like # or ## (instead use Bold text + Emojis).
@@ -57,7 +70,7 @@ Structure the report exactly like this:
    A brief, high-level summary of the macroeconomic/tech sector sentiment based on the headlines.
 2. 💡 *Top 3 Investment Ideas for the Week*
    List exactly 3 stocks from the watchlist that present the most compelling risk/reward setups right now. Include:
-   - Ticker, current price, and recent weekly return.
+   - Ticker, current price in Euros (€), and recent weekly return.
    - A bullet point detailing the fundamental or technical catalyst.
 3. ⚠️ *Portfolio Optimization Advisory*
    Review the user's current portfolio holdings (e.g., BTC, ETH, TSLA, NVDA). Based on the weekly research, suggest specific strategic adjustments (e.g., if TSLA is declining and META is showing strong momentum, advise on potentially rebalancing or trimming).

@@ -71,6 +71,18 @@ def get_historical_data(ticker, period="1mo", interval="1d"):
         return {"success": True, "history": history}
     except Exception as e:
         return {"success": False, "error": str(e)}
+def get_usd_to_eur_rate():
+    """Fetch current EUR/USD rate from Yahoo Finance and calculate USD-to-EUR rate."""
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'})
+    try:
+        with urllib.request.urlopen(req) as response:
+            chart_data = json.loads(response.read().decode())
+        price = chart_data['chart']['result'][0]['meta']['regularMarketPrice']
+        return 1.0 / price
+    except Exception as e:
+        print(f"Failed to fetch EUR/USD rate: {e}")
+        return 0.92
 
 def get_news_headlines(ticker):
     """Fetch recent news headlines from Yahoo Finance Search API."""

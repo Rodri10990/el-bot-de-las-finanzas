@@ -3,7 +3,7 @@ import datetime
 import time
 import functions_framework
 from flask import jsonify
-from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs
+from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs, get_usd_to_eur_rate
 from research_analyst import handle_research_cycle
 
 @functions_framework.http
@@ -79,20 +79,24 @@ def handle_trading_cycle(request):
     # 4. Compile and send Telegram notification report
     if results or errors:
         try:
+            usd_to_eur = get_usd_to_eur_rate()
             final_portfolio = load_portfolio_gcs(bucket_name)
-            cash = final_portfolio.get("cash", 0.0)
-            nav, holdings_val, holding_values, holding_prices = get_portfolio_valuation_gcs(final_portfolio)
+            cash = final_portfolio.get("cash", 0.0) * usd_to_eur
+            nav_usd, holdings_val_usd, holding_values, holding_prices = get_portfolio_valuation_gcs(final_portfolio)
+            
+            nav = nav_usd * usd_to_eur
+            holdings_val = holdings_val_usd * usd_to_eur
             
             # Format message
             status_emoji = "🔴" if errors else "🟢"
             status_title = f"{status_emoji} *Trading Bot Daily Report* ({current_date})\n\n"
             
-            summary_section = f"*Portfolio Summary:*\n"
-            summary_section += f"• Net Asset Value: `${nav:.2f}`\n"
-            summary_section += f"• Cash Balance: `${cash:.2f}`\n"
-            summary_section += f"• Assets Value: `${holdings_val:.2f}`\n\n"
+            summary_section = f"*Portfolio Summary (Euros):*\n"
+            summary_section += f"• Net Asset Value: `€{nav:.2f}`\n"
+            summary_section += f"• Cash Balance: `€{cash:.2f}`\n"
+            summary_section += f"• Assets Value: `€{holdings_val:.2f}`\n\n"
             
-            trades_section = f"*Today's Actions:*\n"
+            trades_section = f"*Today's Actions (Euros):*\n"
             for t in WATCHLIST:
                 if t in skipped_tickers:
                     trades_section += f"• {t}: _Skipped (already run)_\n"
@@ -102,12 +106,12 @@ def handle_trading_cycle(request):
                         t_res = res['trade_result']
                         action = t_res['action_taken']
                         shares = t_res['shares_traded']
-                        val = t_res['trade_value']
-                        price = res['price']
+                        val = t_res['trade_value'] * usd_to_eur
+                        price = res['price'] * usd_to_eur
                         if action == "HOLD":
-                            trades_section += f"• {t}: `HOLD` (Price: `${price:.2f}`)\n"
+                            trades_section += f"• {t}: `HOLD` (Price: `€{price:.2f}`)\n"
                         else:
-                            trades_section += f"• {t}: `{action}` {abs(shares):.6f} shares (Value: `${val:.2f}` at `${price:.2f}`)\n"
+                            trades_section += f"• {t}: `{action}` {abs(shares):.6f} shares (Value: `€{val:.2f}` at `€{price:.2f}`)\n"
                     else:
                         trades_section += f"• {t}: ❌ *FAILED*: {res.get('error')}\n"
                 else:

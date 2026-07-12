@@ -28,6 +28,17 @@ def get_current_price(ticker):
     except Exception:
         return 0.0, False
 
+def get_usd_to_eur_rate():
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/EURUSD=X?interval=1d&range=1d"
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    try:
+        with urllib.request.urlopen(req) as response:
+            chart_data = json.loads(response.read().decode())
+        price = chart_data['chart']['result'][0]['meta']['regularMarketPrice']
+        return 1.0 / price
+    except Exception:
+        return 0.92
+
 def main():
     try:
         with open("portfolio.json", "r") as f:
@@ -36,7 +47,8 @@ def main():
         with open("portfolio_current.json", "r") as f:
             portfolio = json.load(f)
         
-    cash = portfolio['cash']
+    usd_to_eur = get_usd_to_eur_rate()
+    cash = portfolio['cash'] * usd_to_eur
     holdings = portfolio['holdings']
     
     total_holdings_val = 0.0
@@ -44,25 +56,26 @@ def main():
     
     print(f"{UI.DIM}Valuing cloud portfolio at real-time market prices...{UI.RESET}")
     for ticker, units in holdings.items():
-        price, success = get_current_price(ticker)
+        price_usd, success = get_current_price(ticker)
+        price = price_usd * usd_to_eur
         value = units * price
         total_holdings_val += value
-        price_str = f"${price:,.2f}" if success else "CONNECTION ERROR"
-        value_str = f"${value:,.2f}"
+        price_str = f"€{price:,.2f}" if success else "CONNECTION ERROR"
+        value_str = f"€{value:,.2f}"
         status_icon = "🟢" if success else "🔴"
         assets_table.append((ticker, units, price_str, value_str, status_icon))
         
     net_asset_value = cash + total_holdings_val
     
     print(f"\n{UI.BOLD}{UI.WHITE}┌────────────────────────────────────────────────────────┐{UI.RESET}")
-    print(f"{UI.BOLD}{UI.WHITE}│ {UI.GREEN}PORTFOLIO PERFORMANCE & CASH BALANCES{UI.WHITE}                  │{UI.RESET}")
+    print(f"{UI.BOLD}{UI.WHITE}│ {UI.GREEN}PORTFOLIO PERFORMANCE & CASH BALANCES (EUR){UI.WHITE}            │{UI.RESET}")
     print(f"{UI.BOLD}{UI.WHITE}├────────────────────────────────────────────────────────┤{UI.RESET}")
-    print(f"{UI.BOLD}{UI.WHITE}│ {UI.BOLD}Net Asset Value (NAV): {UI.GREEN}${net_asset_value:,.2f}{UI.WHITE}             │{UI.RESET}")
-    print(f"{UI.BOLD}{UI.WHITE}│ {UI.BOLD}Available Cash:        {UI.CYAN}${cash:,.2f}{UI.WHITE}             │{UI.RESET}")
-    print(f"{UI.BOLD}{UI.WHITE}│ {UI.BOLD}Total Assets Value:    {UI.MAGENTA}${total_holdings_val:,.2f}{UI.WHITE}             │{UI.RESET}")
+    print(f"{UI.BOLD}{UI.WHITE}│ {UI.BOLD}Net Asset Value (NAV): {UI.GREEN}€{net_asset_value:,.2f}{UI.WHITE}             │{UI.RESET}")
+    print(f"{UI.BOLD}{UI.WHITE}│ {UI.BOLD}Available Cash:        {UI.CYAN}€{cash:,.2f}{UI.WHITE}             │{UI.RESET}")
+    print(f"{UI.BOLD}{UI.WHITE}│ {UI.BOLD}Total Assets Value:    {UI.MAGENTA}€{total_holdings_val:,.2f}{UI.WHITE}             │{UI.RESET}")
     print(f"{UI.BOLD}{UI.WHITE}└────────────────────────────────────────────────────────┘{UI.RESET}")
     
-    print(f"\n{UI.BOLD}{UI.BLUE}⏵ CURRENT PORTFOLIO POSITION BREAKDOWN{UI.RESET}")
+    print(f"\n{UI.BOLD}{UI.BLUE}⏵ CURRENT PORTFOLIO POSITION BREAKDOWN (EUR){UI.RESET}")
     print(f"{UI.BOLD}{UI.WHITE}{'Ticker':<10} {'Holdings':<14} {'Market Price':<16} {'Market Value':<16} {'Status':<6}{UI.RESET}")
     print(f"{UI.DARK_GRAY}{'-' * 66}{UI.RESET}")
     for ticker, units, price_str, value_str, icon in assets_table:
