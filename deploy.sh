@@ -22,10 +22,27 @@ echo "Target Deployment Region:   $REGION"
 echo "Target Cloud Storage Bucket: gs://$BUCKET_NAME"
 echo ""
 
-# Read Google AI Studio API Key
-read -sp "Enter your Google AI Studio API Key: " GEMINI_API_KEY
-echo ""
-echo ""
+# Read Google AI Studio API Key and Telegram credentials
+echo "[INFO] Retrieving credentials..."
+EXISTING_GEMINI_API_KEY=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.environmentVariables.GEMINI_API_KEY)" 2>/dev/null || true)
+EXISTING_TELEGRAM_BOT_TOKEN=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.environmentVariables.TELEGRAM_BOT_TOKEN)" 2>/dev/null || true)
+EXISTING_TELEGRAM_CHAT_ID=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.environmentVariables.TELEGRAM_CHAT_ID)" 2>/dev/null || true)
+
+GEMINI_API_KEY=$EXISTING_GEMINI_API_KEY
+if [ -z "$GEMINI_API_KEY" ]; then
+    read -sp "Enter your Google AI Studio API Key: " GEMINI_API_KEY
+    echo ""
+fi
+
+TELEGRAM_BOT_TOKEN=$EXISTING_TELEGRAM_BOT_TOKEN
+if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+    read -p "Enter your Telegram Bot Token: " TELEGRAM_BOT_TOKEN
+fi
+
+TELEGRAM_CHAT_ID=$EXISTING_TELEGRAM_CHAT_ID
+if [ -z "$TELEGRAM_CHAT_ID" ]; then
+    read -p "Enter your Telegram Chat ID: " TELEGRAM_CHAT_ID
+fi
 
 # 2. Enable Required APIs
 echo "[INFO] Enabling necessary Google Cloud APIs..."
@@ -82,7 +99,8 @@ gcloud functions deploy "$FUNCTION_NAME" \
     --memory=256Mi \
     --cpu=1 \
     --timeout=180 \
-    --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,BUCKET_NAME=$BUCKET_NAME" \
+    --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,BUCKET_NAME=$BUCKET_NAME,TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID" \
+    --set-secrets="ALPACA_API_KEY_ID=alpaca-key-id:latest,ALPACA_SECRET_KEY=alpaca-secret-key:latest" \
     --no-allow-unauthenticated
 
 # Retrieve Function URL

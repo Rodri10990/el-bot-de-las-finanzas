@@ -33,4 +33,5 @@ gcloud functions deploy "$FUNCTION_NAME" \
   --cpu=1 \
   --timeout=180 \
   --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,BUCKET_NAME=$BUCKET_NAME,TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID" \
+  --set-secrets="ALPACA_API_KEY_ID=alpaca-key-id:latest,ALPACA_SECRET_KEY=alpaca-secret-key:latest" \
   --no-allow-unauthenticated
