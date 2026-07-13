@@ -43,6 +43,7 @@ def handle_trading_cycle(request):
     errors = []
     skipped_tickers = []
     analyst_trades = []
+    execution_warnings = []
     
     # 2.5 Ingest Analyst recommendations if recommendations.json is present on GCS
     try:
@@ -67,7 +68,7 @@ def handle_trading_cycle(request):
                 price_res = get_historical_data(ticker, period="1d", interval="1d")
                 if not price_res.get("success") or not price_res.get("history"):
                     print(f"Failed to fetch price for {ticker}: {price_res.get('error')}. Skipping.")
-                    errors.append(f"Analyst {ticker}: Failed to fetch price.")
+                    execution_warnings.append(f"Analyst {ticker}: Failed to fetch price.")
                     continue
                 price = price_res["history"][-1]["close"]
                 
@@ -83,7 +84,7 @@ def handle_trading_cycle(request):
                     
                     if trade_value <= 0.01:
                         print(f"Insufficient cash to buy {ticker}. Skipping.")
-                        errors.append(f"Analyst {ticker}: Insufficient cash to BUY.")
+                        execution_warnings.append(f"Analyst {ticker}: Insufficient cash to BUY.")
                         continue
                         
                     shares = trade_value / price
@@ -256,6 +257,11 @@ def handle_trading_cycle(request):
                         trades_section += f"• {t}: ❌ *FAILED*: {res.get('error')}\n"
                 else:
                     trades_section += f"• {t}: ❌ *UNPROCESSED*\n"
+                    
+            if execution_warnings:
+                trades_section += f"\n⚠️ *Warnings:*\n"
+                for warn in execution_warnings:
+                    trades_section += f"• {warn}\n"
                     
             if errors:
                 trades_section += f"\n🚨 *Errors Detected:*\n"
