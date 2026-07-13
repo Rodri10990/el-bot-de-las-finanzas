@@ -83,6 +83,64 @@ Keep the tone professional, objective, and analytical.
     response = model.generate_content(prompt)
     return response.text
 
+def extract_structured_recommendations(api_key, report_text, watchlist_data):
+    """Call Gemini to extract structured BUY/SELL/HOLD recommendations from the markdown report."""
+    genai.configure(api_key=api_key)
+    prompt = f"""
+You are a Quantitative Integration Analyst. Read this weekly equity research report and extract a structured list of actionable trading recommendations for the watchlist stocks.
+
+### WEEKLY RESEARCH REPORT:
+{report_text}
+
+### WATCHLIST SYMBOLS:
+{list(watchlist_data.keys())}
+
+### INSTRUCTIONS:
+1. Extract any concrete buy, sell, or trim recommendations mentioned in the report.
+2. For each recommendation, determine:
+   - "ticker": The stock symbol (must be one of the watchlist symbols, e.g. TSLA, NVDA, AAPL).
+   - "action": "BUY", "SELL", or "HOLD".
+   - "allocation_pct": The allocation percentage recommended (integer between 0 and 100). If not specified, default to 50 for buy/sell.
+   - "reason": A short 1-sentence summary of the reasoning.
+3. You must respond with a JSON array in this exact format:
+[
+  {{
+    "ticker": "<symbol>",
+    "action": "<BUY, SELL, or HOLD>",
+    "allocation_pct": <int>,
+    "reason": "<reasoning>"
+  }}
+]
+Do not include any extra text, markdown formatting, or HTML. Just return the raw JSON array.
+"""
+    model = genai.GenerativeModel("gemini-2.5-flash")
+    response = model.generate_content(prompt)
+    text = response.text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except Exception as e:
+        print(f"Failed to parse recommendations JSON: {e}. Text: {text}")
+        return []
+
+def save_recommendations_gcs(bucket_name, recommendations):
+    """Save recommendations JSON to Google Cloud Storage."""
+    if not recommendations:
+        return
+    from google.cloud import storage
+    with storage.Client() as client:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob("recommendations.json")
+        blob.upload_from_string(
+            json.dumps(recommendations, indent=2),
+            content_type="application/json"
+        )
+        print("recommendations.json saved to GCS successfully.")
+
 @functions_framework.http
 def handle_research_cycle(request):
     """
@@ -139,6 +197,18 @@ def handle_research_cycle(request):
         print("Advisory report generated. Dispatching to Telegram...")
         
         send_success = send_telegram_alert(report)
+        
+        # Save structured recommendations if the report was sent successfully
+        if send_success:
+            try:
+                print("Extracting structured recommendations for GCS queue...")
+                recs = extract_structured_recommendations(api_key, report, watchlist_data)
+                if recs:
+                    print(f"Saving {len(recs)} recommendations to GCS...")
+                    save_recommendations_gcs(bucket_name, recs)
+            except Exception as rec_err:
+                print(f"Failed to process and save structured recommendations: {rec_err}")
+                
         return jsonify({
             "success": send_success,
             "timestamp": datetime.datetime.now().isoformat(),

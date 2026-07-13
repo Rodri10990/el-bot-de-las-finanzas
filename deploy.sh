@@ -134,14 +134,14 @@ if gcloud scheduler jobs describe "$SCHEDULER_JOB_NAME" --location="$REGION" >/d
     echo "Cloud Scheduler job $SCHEDULER_JOB_NAME already exists. Updating..."
     gcloud scheduler jobs update http "$SCHEDULER_JOB_NAME" \
         --location="$REGION" \
-        --schedule="0 21 * * *" \
+        --schedule="0 15 * * *" \
         --uri="$FUNCTION_URL" \
         --http-method=POST \
         --oidc-service-account-email="$SERVICE_ACCOUNT_EMAIL"
 else
     gcloud scheduler jobs create http "$SCHEDULER_JOB_NAME" \
         --location="$REGION" \
-        --schedule="0 21 * * *" \
+        --schedule="0 15 * * *" \
         --uri="$FUNCTION_URL" \
         --http-method=POST \
         --oidc-service-account-email="$SERVICE_ACCOUNT_EMAIL"
@@ -152,6 +152,6 @@ echo ""
 echo "=========================================================="
 echo "🎉 DEPLOYMENT COMPLETE!"
 echo "Your paper trading bot is now running 24/7 in the cloud."
-echo "It will run daily at 21:00 UTC."
+echo "It will run daily at 15:00 UTC."
 echo "You can check GCS gs://$BUCKET_NAME to see portfolio.json and history.csv."
 echo "=========================================================="

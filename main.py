@@ -3,7 +3,7 @@ import datetime
 import time
 import functions_framework
 from flask import jsonify
-from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs, get_usd_to_eur_rate
+from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs, get_usd_to_eur_rate, load_recommendations_gcs, delete_recommendations_gcs, save_portfolio_gcs, get_historical_data
 from research_analyst import handle_research_cycle
 
 @functions_framework.http
@@ -42,7 +42,125 @@ def handle_trading_cycle(request):
     results = {}
     errors = []
     skipped_tickers = []
+    analyst_trades = []
     
+    # 2.5 Ingest Analyst recommendations if recommendations.json is present on GCS
+    try:
+        recs = load_recommendations_gcs(bucket_name)
+        if recs:
+            print(f"Found Analyst recommendations in queue: {recs}")
+            p_state = load_portfolio_gcs(bucket_name)
+            
+            for rec in recs:
+                ticker = rec.get("ticker")
+                action = rec.get("action")
+                alloc_pct = rec.get("allocation_pct", 50)
+                reason = rec.get("reason", "No reason provided.")
+                
+                if not ticker or action not in ["BUY", "SELL", "HOLD"]:
+                    print(f"Skipping invalid recommendation: {rec}")
+                    continue
+                
+                print(f"Processing Analyst recommendation: {action} {ticker} ({alloc_pct}%)...")
+                
+                # Fetch current price via yfinance
+                price_res = get_historical_data(ticker, period="1d", interval="1d")
+                if not price_res.get("success") or not price_res.get("history"):
+                    print(f"Failed to fetch price for {ticker}: {price_res.get('error')}. Skipping.")
+                    errors.append(f"Analyst {ticker}: Failed to fetch price.")
+                    continue
+                price = price_res["history"][-1]["close"]
+                
+                # Execute Trade Simulation
+                nav_usd, holdings_val_usd, values, prices = get_portfolio_valuation_gcs(p_state)
+                
+                if action == "BUY":
+                    # Trade size: alloc_pct * 15% of NAV
+                    trade_value = (alloc_pct / 100.0) * 0.15 * nav_usd
+                    if trade_value > p_state["cash"]:
+                        print(f"Trimming trade size to available cash. Requested: ${trade_value:.2f}, Cash: ${p_state['cash']:.2f}")
+                        trade_value = p_state["cash"]
+                    
+                    if trade_value <= 0.01:
+                        print(f"Insufficient cash to buy {ticker}. Skipping.")
+                        errors.append(f"Analyst {ticker}: Insufficient cash to BUY.")
+                        continue
+                        
+                    shares = trade_value / price
+                    p_state["cash"] -= trade_value
+                    p_state["holdings"][ticker] = p_state["holdings"].get(ticker, 0.0) + shares
+                    
+                    p_state["history"].append({
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "ticker": ticker,
+                        "action": "BUY",
+                        "price": price,
+                        "allocation_percentage": float(alloc_pct),
+                        "shares_traded": float(shares),
+                        "value": float(trade_value),
+                        "reasoning": f"Analyst Recommendation: {reason}"
+                    })
+                    analyst_trades.append({"ticker": ticker, "action": "BUY", "shares": shares, "value": trade_value, "price": price})
+                    
+                elif action == "SELL":
+                    held_shares = p_state["holdings"].get(ticker, 0.0)
+                    if held_shares <= 0.0:
+                        print(f"No holdings of {ticker} to sell. Skipping.")
+                        continue
+                        
+                    shares_to_sell = held_shares * (alloc_pct / 100.0)
+                    trade_value = shares_to_sell * price
+                    p_state["cash"] += trade_value
+                    p_state["holdings"][ticker] = held_shares - shares_to_sell
+                    
+                    if p_state["holdings"][ticker] <= 0.000001:
+                        p_state["holdings"].pop(ticker, None)
+                        
+                    p_state["history"].append({
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "ticker": ticker,
+                        "action": "SELL",
+                        "price": price,
+                        "allocation_percentage": float(alloc_pct),
+                        "shares_traded": float(-shares_to_sell),
+                        "value": float(trade_value),
+                        "reasoning": f"Analyst Recommendation: {reason}"
+                    })
+                    analyst_trades.append({"ticker": ticker, "action": "SELL", "shares": shares_to_sell, "value": trade_value, "price": price})
+                    
+                elif action == "HOLD":
+                    p_state["history"].append({
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "ticker": ticker,
+                        "action": "HOLD",
+                        "price": price,
+                        "allocation_percentage": 0.0,
+                        "shares_traded": 0.0,
+                        "value": 0.0,
+                        "reasoning": f"Analyst Recommendation: {reason}"
+                    })
+                    analyst_trades.append({"ticker": ticker, "action": "HOLD", "shares": 0.0, "value": 0.0, "price": price})
+                
+                # Mark as processed today so standard scan skips it
+                if "processed_today" not in p_state or p_state["processed_today"].get("date") != current_date:
+                    p_state["processed_today"] = {"date": current_date, "tickers": []}
+                if ticker not in p_state["processed_today"]["tickers"]:
+                    p_state["processed_today"]["tickers"].append(ticker)
+                    
+            # Save updated state
+            save_portfolio_gcs(bucket_name, p_state)
+            # Remove queue file
+            delete_recommendations_gcs(bucket_name)
+            # Refresh portfolio reference
+            portfolio = p_state
+            
+    except Exception as queue_err:
+        print(f"Error processing recommendations queue: {queue_err}")
+        errors.append(f"Analyst Queue: Error processing: {str(queue_err)}")
+
+    processed_today = portfolio.get("processed_today", {})
+    processed_tickers = processed_today.get("tickers", []) if processed_today.get("date") == current_date else []
+
     print(f"Starting trading cycle for watchlist: {WATCHLIST}. Already processed today: {processed_tickers}")
     
     # 3. Iterate and run the cycle for each watchlist ticker
@@ -103,7 +221,22 @@ def handle_trading_cycle(request):
             summary_section += f"• Assets Value: `€{holdings_val:.2f}`\n"
             summary_section += f"• Bot Trading Return: `{usd_return_pct:+.2f}%` (USD basis)\n\n"
             
-            trades_section = f"*Today's Actions (Euros):*\n"
+            trades_section = ""
+            if analyst_trades:
+                trades_section += f"*Weekly Analyst Actions (Euros):*\n"
+                for trade in analyst_trades:
+                    ticker = trade["ticker"]
+                    action = trade["action"]
+                    val = trade["value"] * usd_to_eur
+                    price = trade["price"] * usd_to_eur
+                    shares = trade["shares"]
+                    if action == "HOLD":
+                        trades_section += f"• {ticker}: `HOLD` (Price: `€{price:.2f}`)\n"
+                    else:
+                        trades_section += f"• {ticker}: `{action}` {abs(shares):.6f} shares (Value: `€{val:.2f}` at `€{price:.2f}`)\n"
+                trades_section += "\n"
+                
+            trades_section += f"*Today's Actions (Euros):*\n"
             for t in WATCHLIST:
                 if t in skipped_tickers:
                     trades_section += f"• {t}: _Skipped (already run)_\n"

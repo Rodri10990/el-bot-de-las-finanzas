@@ -513,3 +513,28 @@ def run_cloud_simulation_cycle(ticker, bucket_name, api_key):
             'holdings': portfolio['holdings']
         }
     }
+
+def load_recommendations_gcs(bucket_name):
+    """Load recommendations queue from Google Cloud Storage. Returns list or None if missing."""
+    with storage.Client() as client:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob("recommendations.json")
+        if not blob.exists():
+            return None
+        try:
+            content = blob.download_as_text()
+            return json.loads(content)
+        except Exception as e:
+            print(f"Error loading recommendations.json: {e}")
+            return None
+
+def delete_recommendations_gcs(bucket_name):
+    """Delete recommendations.json queue from GCS."""
+    with storage.Client() as client:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob("recommendations.json")
+        if blob.exists():
+            blob.delete()
+            print("recommendations.json deleted from GCS.")
+            return True
+        return False
