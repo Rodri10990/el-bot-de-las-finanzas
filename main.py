@@ -87,6 +87,12 @@ def handle_trading_cycle(request):
             nav = nav_usd * usd_to_eur
             holdings_val = holdings_val_usd * usd_to_eur
             
+            # Calculate USD Trading Performance (isolating FX conversion fluctuations)
+            total_invested_usd = sum(tx.get("value", 0.0) for tx in final_portfolio.get("history", []) if tx.get("action") == "DEPOSIT")
+            if total_invested_usd <= 0.0:
+                total_invested_usd = 216.00
+            usd_return_pct = ((nav_usd - total_invested_usd) / total_invested_usd) * 100
+            
             # Format message
             status_emoji = "🔴" if errors else "🟢"
             status_title = f"{status_emoji} *Trading Bot Daily Report* ({current_date})\n\n"
@@ -94,7 +100,8 @@ def handle_trading_cycle(request):
             summary_section = f"*Portfolio Summary (Euros):*\n"
             summary_section += f"• Net Asset Value: `€{nav:.2f}`\n"
             summary_section += f"• Cash Balance: `€{cash:.2f}`\n"
-            summary_section += f"• Assets Value: `€{holdings_val:.2f}`\n\n"
+            summary_section += f"• Assets Value: `€{holdings_val:.2f}`\n"
+            summary_section += f"• Bot Trading Return: `{usd_return_pct:+.2f}%` (USD basis)\n\n"
             
             trades_section = f"*Today's Actions (Euros):*\n"
             for t in WATCHLIST:
