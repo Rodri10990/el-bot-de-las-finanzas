@@ -231,6 +231,47 @@ def save_portfolio_gcs(bucket_name, portfolio):
         blob = bucket.blob(PORTFOLIO_BLOB)
         blob.upload_from_string(json.dumps(portfolio, indent=2))
 
+def sync_portfolio_with_alpaca(bucket_name, portfolio):
+    """Query active Alpaca account and update GCS portfolio cash/holdings to sync them."""
+    if os.environ.get("LIVE_TRADING", "false").lower() != "true":
+        return portfolio
+        
+    from alpaca_executor import AlpacaClient
+    client = AlpacaClient()
+    
+    print("Syncing GCS portfolio with live Alpaca account balance and positions...")
+    acct_res = client.get_account()
+    if not acct_res.get("success"):
+        print(f"Failed to sync with Alpaca account: {acct_res.get('error')}")
+        return portfolio
+        
+    pos_res = client.get_positions()
+    if not pos_res.get("success"):
+        print(f"Failed to sync with Alpaca positions: {pos_res.get('error')}")
+        return portfolio
+        
+    acct = acct_res["data"]
+    positions = pos_res["data"]
+    
+    # Update GCS portfolio cash with Alpaca's current cash balance
+    old_cash = portfolio.get("cash", 0.0)
+    portfolio["cash"] = float(acct.get("cash", 0.0))
+    
+    # Update GCS holdings
+    old_holdings = portfolio.get("holdings", {})
+    new_holdings = {}
+    for pos in positions:
+        symbol = pos.get("symbol")
+        qty = float(pos.get("qty", 0.0))
+        if qty > 0:
+            new_holdings[symbol] = qty
+            
+    portfolio["holdings"] = new_holdings
+    
+    save_portfolio_gcs(bucket_name, portfolio)
+    print(f"Sync complete. Cash: ${portfolio['cash']:.2f} (was ${old_cash:.2f}). Positions: {list(new_holdings.keys())}")
+    return portfolio
+
 def get_portfolio_valuation_gcs(portfolio, active_ticker=None, active_price=0.0):
     """Calculate the real-time valuation of the portfolio in the cloud."""
     total_holdings_val = 0.0
@@ -356,6 +397,32 @@ def execute_trade_gcs(bucket_name, portfolio, ticker, action, allocation_pct, pr
         trade_value = revenue
         trade_executed = True
         
+    if trade_executed:
+        live_trading = os.environ.get("LIVE_TRADING", "false").lower() == "true"
+        if live_trading:
+            from alpaca_executor import AlpacaClient
+            client = AlpacaClient()
+            if action == "BUY":
+                order_res = client.submit_order(ticker, "buy", amount_usd=trade_value)
+            elif action == "SELL":
+                order_res = client.submit_order(ticker, "sell", qty=abs(shares_traded))
+            
+            if not order_res.get("success"):
+                print(f"Alpaca Trade Execution Failed for {ticker}: {order_res.get('error')}")
+                safety_log.append(f"Alpaca Order Rejected: {order_res.get('error')}. Trade Aborted.")
+                # Rollback GCS state updates
+                portfolio['cash'] = old_cash
+                portfolio['holdings'][ticker] = old_holding
+                if portfolio['holdings'][ticker] <= 0:
+                    portfolio['holdings'].pop(ticker, None)
+                trade_executed = False
+                shares_traded = 0.0
+                trade_value = 0.0
+            else:
+                order_data = order_res["data"]
+                print(f"Alpaca Order Submitted successfully: {order_data}")
+                safety_log.append(f"Alpaca Order Placed: {order_data.get('id')} ({order_data.get('status')})")
+                
     if trade_executed:
         log_entry = {
             "timestamp": datetime.datetime.now().isoformat(),

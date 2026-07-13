@@ -3,7 +3,7 @@ import datetime
 import time
 import functions_framework
 from flask import jsonify
-from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs, get_usd_to_eur_rate, load_recommendations_gcs, delete_recommendations_gcs, save_portfolio_gcs, get_historical_data
+from cloud_simulator import run_cloud_simulation_cycle, WATCHLIST, load_portfolio_gcs, send_telegram_alert, get_portfolio_valuation_gcs, get_usd_to_eur_rate, load_recommendations_gcs, delete_recommendations_gcs, save_portfolio_gcs, get_historical_data, sync_portfolio_with_alpaca
 from research_analyst import handle_research_cycle
 
 @functions_framework.http
@@ -28,9 +28,10 @@ def handle_trading_cycle(request):
             "error": "Environment variable BUCKET_NAME is not set. Please configure it in your Cloud Function."
         }), 500
         
-    # 2. Load portfolio and check for already-processed tickers today
+    # 2. Load portfolio, sync with Alpaca (if live), and check for already-processed tickers today
     try:
         portfolio = load_portfolio_gcs(bucket_name)
+        portfolio = sync_portfolio_with_alpaca(bucket_name, portfolio)
     except Exception as e:
         print(f"Failed to load portfolio for idempotency check: {e}")
         portfolio = {}
@@ -87,6 +88,19 @@ def handle_trading_cycle(request):
                         execution_warnings.append(f"Analyst {ticker}: Insufficient cash to BUY.")
                         continue
                         
+                    # Execute Live Broker Order if enabled
+                    live_trading = os.environ.get("LIVE_TRADING", "false").lower() == "true"
+                    if live_trading:
+                        from alpaca_executor import AlpacaClient
+                        client = AlpacaClient()
+                        order_res = client.submit_order(ticker, "buy", amount_usd=trade_value)
+                        if not order_res.get("success"):
+                            print(f"Alpaca Analyst Order Rejected for {ticker}: {order_res.get('error')}")
+                            execution_warnings.append(f"Analyst {ticker}: Alpaca execution failed: {order_res.get('error')}")
+                            continue
+                        else:
+                            print(f"Alpaca Analyst Order Submitted successfully: {order_res.get('data')}")
+                            
                     shares = trade_value / price
                     p_state["cash"] -= trade_value
                     p_state["holdings"][ticker] = p_state["holdings"].get(ticker, 0.0) + shares
@@ -111,6 +125,19 @@ def handle_trading_cycle(request):
                         
                     shares_to_sell = held_shares * (alloc_pct / 100.0)
                     trade_value = shares_to_sell * price
+                    # Execute Live Broker Order if enabled
+                    live_trading = os.environ.get("LIVE_TRADING", "false").lower() == "true"
+                    if live_trading:
+                        from alpaca_executor import AlpacaClient
+                        client = AlpacaClient()
+                        order_res = client.submit_order(ticker, "sell", qty=shares_to_sell)
+                        if not order_res.get("success"):
+                            print(f"Alpaca Analyst Order Rejected for {ticker}: {order_res.get('error')}")
+                            execution_warnings.append(f"Analyst {ticker}: Alpaca execution failed: {order_res.get('error')}")
+                            continue
+                        else:
+                            print(f"Alpaca Analyst Order Submitted successfully: {order_res.get('data')}")
+                            
                     p_state["cash"] += trade_value
                     p_state["holdings"][ticker] = held_shares - shares_to_sell
                     
