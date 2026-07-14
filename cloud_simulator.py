@@ -257,7 +257,24 @@ def sync_portfolio_with_alpaca(bucket_name, portfolio):
     old_cash = portfolio.get("cash", 0.0)
     portfolio["cash"] = float(acct.get("cash", 0.0))
     
-    # Update GCS holdings
+    # Query outstanding open/pending orders to prevent double processing on retries
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    if "processed_today" not in portfolio or portfolio["processed_today"].get("date") != current_date:
+        portfolio["processed_today"] = {"date": current_date, "tickers": []}
+        
+    orders_res = client.get_orders(status="open")
+    open_tickers = []
+    if orders_res.get("success"):
+        orders = orders_res["data"]
+        for order in orders:
+            symbol = order.get("symbol")
+            if symbol:
+                open_tickers.append(symbol)
+                if symbol not in portfolio["processed_today"]["tickers"]:
+                    portfolio["processed_today"]["tickers"].append(symbol)
+                    print(f"Sync: Ticker {symbol} added to processed checklist due to active pending order on Alpaca.")
+                    
+    # Update GCS holdings, preserving old holdings for tickers with open orders
     old_holdings = portfolio.get("holdings", {})
     new_holdings = {}
     for pos in positions:
@@ -265,6 +282,11 @@ def sync_portfolio_with_alpaca(bucket_name, portfolio):
         qty = float(pos.get("qty", 0.0))
         if qty > 0:
             new_holdings[symbol] = qty
+            
+    for symbol in open_tickers:
+        if symbol in old_holdings and symbol not in new_holdings:
+            new_holdings[symbol] = old_holdings[symbol]
+            print(f"Sync: Preserved GCS holding representation for {symbol} due to active pending order.")
             
     portfolio["holdings"] = new_holdings
     

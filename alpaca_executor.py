@@ -79,3 +79,7 @@ class AlpacaClient:
     def cancel_all_orders(self):
         """Cancel any outstanding open orders."""
         return self._request("/v2/orders", method="DELETE")
+
+    def get_orders(self, status="open"):
+        """Fetch orders filtered by status."""
+        return self._request(f"/v2/orders?status={status}")
