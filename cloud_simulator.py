@@ -466,7 +466,7 @@ def execute_trade_gcs(bucket_name, portfolio, ticker, action, allocation_pct, pr
         'old_cash': old_cash,
         'new_cash': portfolio['cash'],
         'old_holding': old_holding,
-        'new_holding': portfolio['holdings'][ticker],
+        'new_holding': portfolio['holdings'].get(ticker, 0.0),
         'action_taken': action if trade_executed else "HOLD",
         'allocation_pct_final': allocation_pct if trade_executed else 0.0,
         'safety_log': safety_log

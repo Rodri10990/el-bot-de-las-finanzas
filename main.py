@@ -281,7 +281,7 @@ def handle_trading_cycle(request):
                         else:
                             trades_section += f"• {t}: `{action}` {abs(shares):.6f} shares (Value: `€{val:.2f}` at `€{price:.2f}`)\n"
                     else:
-                        trades_section += f"• {t}: ❌ *FAILED*: {res.get('error')}\n"
+                        trades_section += f"• {t}: ❌ *FAILED*\n"
                 else:
                     trades_section += f"• {t}: ❌ *UNPROCESSED*\n"
                     
@@ -291,9 +291,11 @@ def handle_trading_cycle(request):
                     trades_section += f"• {warn}\n"
                     
             if errors:
-                trades_section += f"\n🚨 *Errors Detected:*\n"
+                trades_section += f"\n🚨 *Errors Detected:*\n```\n"
                 for err in errors:
-                    trades_section += f"• {err}\n"
+                    safe_err = str(err).replace("`", "'")
+                    trades_section += f"• {safe_err}\n"
+                trades_section += "```\n"
             
             send_telegram_alert(status_title + summary_section + trades_section)
         except Exception as alert_err:
