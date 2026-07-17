@@ -269,6 +269,8 @@ def sync_portfolio_with_alpaca(bucket_name, portfolio):
         for order in orders:
             symbol = order.get("symbol")
             if symbol:
+                if symbol == "BTCUSD": symbol = "BTC-USD"
+                elif symbol == "ETHUSD": symbol = "ETH-USD"
                 open_tickers.append(symbol)
                 if symbol not in portfolio["processed_today"]["tickers"]:
                     portfolio["processed_today"]["tickers"].append(symbol)
@@ -279,6 +281,8 @@ def sync_portfolio_with_alpaca(bucket_name, portfolio):
     new_holdings = {}
     for pos in positions:
         symbol = pos.get("symbol")
+        if symbol == "BTCUSD": symbol = "BTC-USD"
+        elif symbol == "ETHUSD": symbol = "ETH-USD"
         qty = float(pos.get("qty", 0.0))
         if qty > 0:
             new_holdings[symbol] = qty
@@ -424,10 +428,11 @@ def execute_trade_gcs(bucket_name, portfolio, ticker, action, allocation_pct, pr
         if live_trading:
             from alpaca_executor import AlpacaClient
             client = AlpacaClient()
+            alpaca_symbol = ticker.replace("-", "") if ticker in ["BTC-USD", "ETH-USD"] else ticker
             if action == "BUY":
-                order_res = client.submit_order(ticker, "buy", amount_usd=trade_value)
+                order_res = client.submit_order(alpaca_symbol, "buy", amount_usd=trade_value)
             elif action == "SELL":
-                order_res = client.submit_order(ticker, "sell", qty=abs(shares_traded))
+                order_res = client.submit_order(alpaca_symbol, "sell", qty=abs(shares_traded))
             
             if not order_res.get("success"):
                 print(f"Alpaca Trade Execution Failed for {ticker}: {order_res.get('error')}")

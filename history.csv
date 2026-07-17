@@ -1,2 +1,2 @@
-timestamp,ticker,action,price,allocation_percentage,shares_traded,value,available_cash,total_portfolio_value,reasoning
-2026-06-13T11:57:14.000000,USD,DEPOSIT,1.0,100.0,108.0,108.0,108.0,108.0,"Reset virtual portfolio to initial testing state: €100 starting capital (simulated as $108.00 USD)."
+timestamp,ticker,action,price,allocation_percentage,shares_traded,value,cash,portfolio_value,reasoning
+2026-07-17T10:10:58.000000,USD,DEPOSIT,1.0,100.0,300.0,300.0,300.0,300.0,Reset portfolio database to initial Alpaca Paper Trading starting balance of $300.00 USD.
