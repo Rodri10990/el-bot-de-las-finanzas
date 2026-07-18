@@ -60,11 +60,12 @@ class AlpacaClient:
         If amount_usd is specified, it places a fractional order using 'notional' (USD value).
         Otherwise, it places a share-based order using 'qty'.
         """
+        is_crypto = symbol.endswith("USD") and symbol != "USDC"
         body = {
             "symbol": symbol,
             "side": side.lower(),
             "type": "market",
-            "time_in_force": "day"
+            "time_in_force": "gtc" if is_crypto else "day"
         }
         
         if amount_usd is not None:
