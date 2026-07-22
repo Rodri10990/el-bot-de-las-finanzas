@@ -1,7 +1,15 @@
 {
-  "cash": 300.0,
-  "holdings": {},
+  "cash": 47.0,
+  "holdings": {
+    "ETH-USD": 0.023026,
+    "NVDA": 0.151089
+  },
   "last_deposit_date": "2026-07",
+  "daily_nav_history": {
+    "2026-07-17": 300.0,
+    "2026-07-20": 300.67,
+    "2026-07-22": 301.43
+  },
   "history": [
     {
       "timestamp": "2026-07-17T10:10:58.000000",
@@ -15,7 +23,12 @@
     }
   ],
   "processed_today": {
-    "date": "2026-07-17",
-    "tickers": []
+    "date": "2026-07-22",
+    "tickers": [
+      "BTC-USD",
+      "ETH-USD",
+      "TSLA",
+      "NVDA"
+    ]
   }
 }

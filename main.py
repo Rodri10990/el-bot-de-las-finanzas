@@ -233,11 +233,50 @@ def handle_trading_cycle(request):
             nav = nav_usd * usd_to_eur
             holdings_val = holdings_val_usd * usd_to_eur
             
-            # Calculate USD Trading Performance (isolating FX conversion fluctuations)
+            # Track and save daily NAV history in portfolio
+            daily_nav = final_portfolio.get("daily_nav_history", {})
+            daily_nav[current_date] = nav_usd
+            final_portfolio["daily_nav_history"] = daily_nav
+            save_portfolio_gcs(bucket_name, final_portfolio)
+            
+            # Calculate USD Trading Performance metrics
             total_invested_usd = sum(tx.get("value", 0.0) for tx in final_portfolio.get("history", []) if tx.get("action") == "DEPOSIT")
             if total_invested_usd <= 0.0:
-                total_invested_usd = 216.00
-            usd_return_pct = ((nav_usd - total_invested_usd) / total_invested_usd) * 100
+                total_invested_usd = 300.00
+                
+            # 1. Daily Return (compared to previous recorded cycle/day)
+            past_dates = sorted([d for d in daily_nav.keys() if d < current_date])
+            if past_dates:
+                prev_date = past_dates[-1]
+                prev_nav_usd = daily_nav[prev_date]
+                daily_return_pct = ((nav_usd - prev_nav_usd) / prev_nav_usd) * 100.0 if prev_nav_usd > 0 else 0.0
+                daily_diff_usd = nav_usd - prev_nav_usd
+                daily_diff_eur = daily_diff_usd * usd_to_eur
+            else:
+                daily_return_pct = 0.0
+                daily_diff_usd = 0.0
+                daily_diff_eur = 0.0
+                
+            # 2. Monthly Return (MTD)
+            current_month = datetime.datetime.now().strftime("%Y-%m")
+            month_dates = sorted([d for d in daily_nav.keys() if d.startswith(current_month)])
+            if month_dates and month_dates[0] in daily_nav:
+                month_start_nav = daily_nav[month_dates[0]]
+            else:
+                month_start_nav = total_invested_usd
+            monthly_return_pct = ((nav_usd - month_start_nav) / month_start_nav) * 100.0 if month_start_nav > 0 else 0.0
+
+            # 3. Year-to-Date (YTD) Return
+            current_year = datetime.datetime.now().strftime("%Y")
+            ytd_dates = sorted([d for d in daily_nav.keys() if d.startswith(current_year)])
+            if ytd_dates and ytd_dates[0] in daily_nav:
+                ytd_start_nav = daily_nav[ytd_dates[0]]
+            else:
+                ytd_start_nav = total_invested_usd
+            ytd_return_pct = ((nav_usd - ytd_start_nav) / ytd_start_nav) * 100.0 if ytd_start_nav > 0 else 0.0
+
+            # 4. All-Time Total Return
+            total_return_pct = ((nav_usd - total_invested_usd) / total_invested_usd) * 100.0 if total_invested_usd > 0 else 0.0
             
             # Format message
             status_emoji = "🔴" if errors else "🟢"
@@ -246,8 +285,13 @@ def handle_trading_cycle(request):
             summary_section = f"*Portfolio Summary (Euros):*\n"
             summary_section += f"• Net Asset Value: `€{nav:.2f}`\n"
             summary_section += f"• Cash Balance: `€{cash:.2f}`\n"
-            summary_section += f"• Assets Value: `€{holdings_val:.2f}`\n"
-            summary_section += f"• Bot Trading Return: `{usd_return_pct:+.2f}%` (USD basis)\n\n"
+            summary_section += f"• Assets Value: `€{holdings_val:.2f}`\n\n"
+            
+            summary_section += f"*Performance & Returns (USD Basis):*\n"
+            summary_section += f"• Today's Return: `{daily_return_pct:+.2f}%` (`{daily_diff_eur:+.2f}€` / `{daily_diff_usd:+.2f}$`)\n"
+            summary_section += f"• Monthly Return ({current_month}): `{monthly_return_pct:+.2f}%`\n"
+            summary_section += f"• Year-to-Date ({current_year}): `{ytd_return_pct:+.2f}%`\n"
+            summary_section += f"• All-Time Total Return: `{total_return_pct:+.2f}%`\n\n"
             
             trades_section = ""
             if analyst_trades:
