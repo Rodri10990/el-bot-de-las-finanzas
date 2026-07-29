@@ -161,7 +161,7 @@ Do not include any extra text, markdown formatting, or HTML. Just return the raw
             "reasoning": f"Failed to parse Gemini output: {text}. Error: {str(parse_error)}"
         }
 def send_telegram_alert(message):
-    """Send a markdown message to the Telegram bot with plain text fallback on formatting error."""
+    """Send a markdown message to the Telegram bot with plain text fallback on formatting error and auto-chunking for long messages."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
@@ -169,23 +169,31 @@ def send_telegram_alert(message):
         return False
         
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            url, 
-            data=data, 
-            headers={'Content-Type': 'application/json'}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return response.status == 200
-    except urllib.error.HTTPError as http_err:
-        if http_err.code == 400:
-            print(f"Telegram Markdown parse failed. Retrying as plain text. Error: {http_err.read().decode('utf-8')}")
+    
+    # Telegram message limit is 4096 characters. Split long messages into <= 4000 char chunks.
+    max_len = 4000
+    chunks = [message[i:i+max_len] for i in range(0, len(message), max_len)] if len(message) > max_len else [message]
+    
+    overall_success = True
+    for chunk in chunks:
+        payload = {
+            "chat_id": chat_id,
+            "text": chunk,
+            "parse_mode": "Markdown"
+        }
+        try:
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                url, 
+                data=data, 
+                headers={'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                if response.status != 200:
+                    overall_success = False
+        except urllib.error.HTTPError as http_err:
+            err_body = http_err.read().decode('utf-8', errors='ignore')
+            print(f"Telegram Markdown parse failed (HTTP {http_err.code}). Retrying as plain text. Error: {err_body}")
             payload.pop("parse_mode", None)
             try:
                 data = json.dumps(payload).encode('utf-8')
@@ -195,16 +203,16 @@ def send_telegram_alert(message):
                     headers={'Content-Type': 'application/json'}
                 )
                 with urllib.request.urlopen(req, timeout=10) as response:
-                    return response.status == 200
+                    if response.status != 200:
+                        overall_success = False
             except Exception as fallback_err:
                 print(f"Fallback Telegram alert failed: {fallback_err}")
-                return False
-        else:
-            print(f"Failed to send Telegram alert (HTTP {http_err.code}): {http_err.read().decode('utf-8')}")
-            return False
-    except Exception as e:
-        print(f"Failed to send Telegram alert: {e}")
-        return False
+                overall_success = False
+        except Exception as e:
+            print(f"Failed to send Telegram alert: {e}")
+            overall_success = False
+            
+    return overall_success
 
 def load_portfolio_gcs(bucket_name):
     """Load portfolio state from Google Cloud Storage."""
