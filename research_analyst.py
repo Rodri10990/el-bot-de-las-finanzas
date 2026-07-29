@@ -184,9 +184,9 @@ def handle_research_cycle(request):
             errors.append(f"{ticker}: Exception {str(e)}")
             print(f"Exception scanning {ticker}: {e}")
             
-        # 10s sleep between requests to respect Gemini 5 RPM API limits
+        # 4s sleep between requests to respect Gemini API limits
         if ticker != RESEARCH_WATCHLIST[-1]:
-            time.sleep(10)
+            time.sleep(4)
             
     if not watchlist_data:
         return jsonify({"success": False, "error": "Failed to retrieve research data.", "details": errors}), 500
