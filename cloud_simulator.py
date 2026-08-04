@@ -504,10 +504,11 @@ def run_cloud_simulation_cycle(ticker, bucket_name, api_key):
     
     portfolio = load_portfolio_gcs(bucket_name)
     
-    # Auto-deposit: Inject €100 (simulated as $108 USD) at the start of every month
+    # Auto-deposit: Inject €100 (simulated as $108 USD) at the start of every month (only in simulation mode)
+    is_live = os.environ.get("LIVE_TRADING", "false").lower() == "true"
     current_date = datetime.datetime.now().strftime("%Y-%m")
     last_deposit = portfolio.get("last_deposit_date", "")
-    if last_deposit != current_date:
+    if not is_live and last_deposit != current_date:
         deposit_amount = 108.00
         old_cash = portfolio.get("cash", 0.0)
         portfolio["cash"] = old_cash + deposit_amount
